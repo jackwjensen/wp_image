@@ -1,0 +1,9 @@
+.git
+.github
+.vscode
+.idea
+*.md
+backups/
+*.sql
+*.sql.gz
+node_modules/

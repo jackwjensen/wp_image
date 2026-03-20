@@ -1,0 +1,31 @@
+# Environment
+.env
+
+# WordPress uploads (synced separately, not in git)
+wp-content/uploads/*
+!wp-content/uploads/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database dumps (keep local, don't commit)
+backups/
+*.sql
+*.sql.gz
+
+# Docker volumes
+mysql-data/
+
+# WordPress debug log
+wp-content/debug.log
+
+# Node (if using build tools in themes)
+node_modules/

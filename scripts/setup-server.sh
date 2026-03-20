@@ -1,7 +1,23 @@
 #!/bin/bash
 # Run this once on the Hetzner server to set up a new WordPress site.
 # Usage: ./scripts/setup-server.sh <site-name> <repo-url>
-# Example: ./scripts/setup-server.sh my-wp-site git@github.com:youruser/my-wp-site.git
+# Example: ./scripts/setup-server.sh my-wp-site git@github-my-wp-site:jackwjensen/my-wp-site.git
+#
+# IMPORTANT: Each repo needs its own SSH deploy key. Before running this script:
+# 1. Generate a key:  ssh-keygen -t ed25519 -C "github-deploy-<site-name>" -f /root/.ssh/deploy_<site-name> -N ""
+# 2. Add the public key as a deploy key on GitHub (Settings → Deploy keys, enable write access)
+# 3. Add the private key as HETZNER_SSH_KEY secret on GitHub (Settings → Secrets → Actions)
+# 4. Add HETZNER_HOST secret with the server IP
+# 5. Add SSH config alias:
+#      cat >> /root/.ssh/config << EOF
+#
+#      Host github-<site-name>
+#          HostName github.com
+#          User git
+#          IdentityFile /root/.ssh/deploy_<site-name>
+#          IdentitiesOnly yes
+#      EOF
+# 6. Then clone using the alias: git@github-<site-name>:jackwjensen/<site-name>.git
 
 set -e
 
@@ -28,14 +44,25 @@ COMPOSE_PROJECT_NAME=${SITE_NAME}
 MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
 EOF
 
+# Start containers
+echo "Starting containers..."
+docker compose up -d
+
+# Wait for MySQL to be healthy
+echo "Waiting for MySQL..."
+sleep 10
+
+# Fix wp-content permissions for plugin installs and Duplicator
+docker compose exec wordpress chown -R www-data:www-data /var/www/html/wp-content
+
 echo ""
 echo "=== Setup complete ==="
 echo "App directory: $APP_DIR"
 echo "MySQL password: $MYSQL_PASSWORD (saved in .env)"
+echo "Container name: ${SITE_NAME}-wordpress"
 echo ""
 echo "Next steps:"
-echo "  1. Start containers: cd $APP_DIR && docker compose up -d"
-echo "  2. Configure NPM to proxy to container: ${SITE_NAME}-wordpress:80"
-echo "  3. Complete WordPress install via browser"
-echo "  4. (Optional) Import Duplicator backup"
+echo "  1. Configure NPM: add proxy host → ${SITE_NAME}-wordpress:80 (port 80, not 8080)"
+echo "  2. Complete WordPress install via browser (throwaway - will be overwritten by Duplicator)"
+echo "  3. Import with Duplicator (see: scripts/import-duplicator.sh)"
 echo ""

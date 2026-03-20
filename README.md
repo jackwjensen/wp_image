@@ -31,7 +31,7 @@ A boilerplate for deploying Docker-based WordPress sites to a Hetzner VPS with G
 
 ### Deploy to Production
 
-1. Create a GitHub repo and push
+1. Create a **private** GitHub repo and push
 2. Add secrets: `HETZNER_HOST` and `HETZNER_SSH_KEY`
 3. On the server, run:
    ```bash
@@ -47,6 +47,7 @@ A boilerplate for deploying Docker-based WordPress sites to a Hetzner VPS with G
 ├── config/uploads.ini              # PHP upload limits
 ├── scripts/
 │   ├── setup-server.sh             # One-time server setup
+│   ├── import-duplicator.sh        # Copy Duplicator files into container
 │   └── sync-db-from-prod.sh        # Pull prod DB to local
 ├── wp-content/
 │   ├── themes/                     # Version controlled
@@ -73,11 +74,18 @@ A boilerplate for deploying Docker-based WordPress sites to a Hetzner VPS with G
 ## Migrating an Existing Site
 
 1. Install the [Duplicator](https://wordpress.org/plugins/duplicator/) plugin on your existing site
-2. Create a Duplicator package
-3. Set up local dev with this template
-4. Import the Duplicator package
-5. Commit the `wp-content/themes/` and `wp-content/plugins/` changes
-6. Push to deploy
+2. Create a Duplicator package (generates `installer.php` + archive zip)
+3. Set up production with `scripts/setup-server.sh`
+4. Complete the WordPress install wizard (use throwaway values — Duplicator overwrites everything)
+5. Copy Duplicator files to the server and run `scripts/import-duplicator.sh`
+6. Open `https://yourdomain.com/installer.php` and complete the wizard
+   - **DB Host**: `mysql` (NOT `localhost` — Docker containers use service names)
+   - **DB Name**: `wordpress`
+   - **DB User**: `root`
+   - **DB Password**: from `.env` on the server
+7. Commit the `wp-content/themes/` and `wp-content/plugins/` changes
+8. Push to deploy
+9. Sync production DB to local: `./scripts/sync-db-from-prod.sh`
 
 ## Database Strategy
 

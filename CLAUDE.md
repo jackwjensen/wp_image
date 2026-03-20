@@ -99,15 +99,38 @@ After creating the repo, instruct the user to:
 - **NPM proxy target is port 80, not 8080** — Apache inside the WordPress container listens on port 80. Port 8080 is only the host mapping used in local dev.
 - **Duplicator files go INSIDE the container** — files placed on the server filesystem aren't served by Apache. Use `docker compose cp` or the `import-duplicator.sh` script.
 - **wp-content permissions** — the container runs Apache as `www-data`. After any file operations, fix ownership: `docker compose exec wordpress chown -R www-data:www-data /var/www/html/wp-content`
+- **Uploads subdirectories** — after a fresh DB import, plugins may expect subdirectories under `wp-content/uploads/` that don't exist in the volume. Fix with: `docker compose exec wordpress chown -R www-data:www-data /var/www/html/wp-content/uploads` (the plugin will create its subdirectory on next request once permissions are correct).
 - **WordPress install wizard must be completed first** — on a fresh container, WordPress shows its install wizard before any other URL works. Complete it with throwaway values before running Duplicator.
 - **GitHub deploy keys are unique per repo** — the same SSH public key cannot be added to multiple repos. Use SSH config host aliases to map each repo to its own key.
 - **Production .env is critical** — without it, containers start in dev mode (ports exposed, not on nginx-proxy-network). The `setup-server.sh` script creates this automatically.
+- **WP-CLI is NOT in the WordPress container** — the official `wordpress:` image does not include `wp`. The `wpcli` service in docker-compose.yml uses a separate `wordpress:cli-*` image and is for local dev only (behind the `cli` profile). On production, use MySQL queries directly for DB operations.
+- **Table prefix may differ on migrated sites** — Duplicator preserves the original table prefix. The Docker WordPress image defaults to `wp_`. If the source site used a different prefix (e.g., `www`), either rename the tables to `wp_` or set `WORDPRESS_TABLE_PREFIX` in docker-compose. Renaming to `wp_` is preferred for consistency.
+- **Windows has no `export` or Git Bash by default** — the sync-db-from-prod.sh script requires bash with `export`. Use `sync-db-from-prod.bat` on Windows, or do the steps manually (see "Manual DB Sync on Windows" below).
+- **NPM "Force SSL" causes redirect loops** — NPM terminates SSL and forwards HTTP to the container. The WordPress Docker image already handles `X-Forwarded-Proto`. Do NOT enable "Force SSL" in NPM — the built-in wp-config.php snippet handles this.
+
+## Manual DB Sync on Windows
+
+If the sync scripts don't work (SSH passphrase prompts, no bash), do it step by step:
+
+1. **On the server** (SSH session):
+   ```bash
+   cd /opt/apps/<site-name>
+   docker compose exec -T mysql mysqldump -uroot -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) wordpress > /tmp/<site-name>-dump.sql
+   ```
+
+2. **On Windows** (cmd):
+   ```cmd
+   scp root@<server-ip>:/tmp/<site-name>-dump.sql backups\prod_sync.sql
+   docker compose exec -T mysql mysql -uroot -pWordPress_Dev123! wordpress < backups\prod_sync.sql
+   docker compose exec mysql mysql -uroot -pWordPress_Dev123! wordpress -e "UPDATE wp_options SET option_value='http://localhost:8080' WHERE option_name IN ('siteurl','home');"
+   docker compose exec wordpress chown -R www-data:www-data /var/www/html/wp-content/uploads
+   ```
 
 ## Architecture
 
 - WordPress 6.7 + PHP 8.3 + Apache (official `wordpress:6.7-php8.3-apache` image)
 - MySQL 8.4 database
-- WP-CLI available via `docker compose run --rm wpcli wp <command>` (uses `cli` profile)
+- WP-CLI available locally via `docker compose run --rm wpcli wp <command>` (uses `cli` profile, local dev only — NOT available in production)
 - No custom Dockerfile — uses official images directly
 
 ## Docker Compose Structure
@@ -194,5 +217,6 @@ WordPress doesn't have a migration framework like Laravel/Django. The approach:
 | `config/uploads.ini` | PHP upload limits (256M) |
 | `scripts/setup-server.sh` | One-time server setup (clones, creates .env, starts containers, fixes permissions) |
 | `scripts/import-duplicator.sh` | Copy Duplicator files into container and show DB credentials |
-| `scripts/sync-db-from-prod.sh` | Pull production DB to local with URL replacement |
+| `scripts/sync-db-from-prod.sh` | Pull production DB to local (bash/Linux/Mac) |
+| `scripts/sync-db-from-prod.bat` | Pull production DB to local (Windows cmd) |
 | `dev.bat` / `dev.sh` | Local development helper scripts |

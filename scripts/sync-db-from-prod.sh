@@ -1,7 +1,10 @@
 #!/bin/bash
 # Pull production database to local development.
 # Usage: ./scripts/sync-db-from-prod.sh <site-name> [prod-domain] [local-url]
-# Example: ./scripts/sync-db-from-prod.sh my-wp-site mysite.com http://localhost:8080
+# Example: ./scripts/sync-db-from-prod.sh my-wp-site designtest.allegroit.dk http://localhost:8080
+#
+# NOTE: This script requires the HETZNER_HOST env var and SSH access to the server.
+# On Windows, use sync-db-from-prod.bat instead, or run the manual steps from CLAUDE.md.
 
 set -e
 
@@ -19,14 +22,20 @@ ssh "root@${SERVER}" "cd ${REMOTE_DIR} && docker compose exec -T mysql mysqldump
 echo "Importing into local database..."
 docker compose exec -T mysql mysql -uroot -p"WordPress_Dev123!" wordpress < backups/prod_sync.sql
 
-# URL replacement if prod domain provided
+# URL replacement using MySQL directly (WP-CLI is not available in the WordPress container)
 if [ -n "$PROD_DOMAIN" ]; then
   echo "Replacing URLs: https://${PROD_DOMAIN} -> ${LOCAL_URL}"
-  docker compose run --rm wpcli wp search-replace "https://${PROD_DOMAIN}" "${LOCAL_URL}" --all-tables --skip-columns=guid
-  docker compose run --rm wpcli wp search-replace "http://${PROD_DOMAIN}" "${LOCAL_URL}" --all-tables --skip-columns=guid
+  docker compose exec -T mysql mysql -uroot -p"WordPress_Dev123!" wordpress -e "
+    UPDATE wp_options SET option_value = REPLACE(option_value, 'https://${PROD_DOMAIN}', '${LOCAL_URL}') WHERE option_value LIKE '%${PROD_DOMAIN}%';
+    UPDATE wp_options SET option_value = REPLACE(option_value, 'http://${PROD_DOMAIN}', '${LOCAL_URL}') WHERE option_value LIKE '%${PROD_DOMAIN}%';
+    UPDATE wp_posts SET post_content = REPLACE(post_content, 'https://${PROD_DOMAIN}', '${LOCAL_URL}') WHERE post_content LIKE '%${PROD_DOMAIN}%';
+    UPDATE wp_posts SET guid = REPLACE(guid, 'https://${PROD_DOMAIN}', '${LOCAL_URL}') WHERE guid LIKE '%${PROD_DOMAIN}%';
+    UPDATE wp_postmeta SET meta_value = REPLACE(meta_value, 'https://${PROD_DOMAIN}', '${LOCAL_URL}') WHERE meta_value LIKE '%${PROD_DOMAIN}%';
+  "
 fi
 
-echo "Flushing cache..."
-docker compose run --rm wpcli wp cache flush
+# Fix uploads permissions
+echo "Fixing uploads permissions..."
+docker compose exec wordpress chown -R www-data:www-data /var/www/html/wp-content/uploads
 
 echo "Done! Local DB is now a copy of production."
